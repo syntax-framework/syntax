@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="964"
+   height="92"
+   viewBox="0 0 255.05834 24.341665"
+   version="1.1"
+   id="svg231760"
+   inkscape:version="1.1.1 (c3084ef, 2021-09-22)"
+   sodipodi:docname="logo-syntax-framework.svg"
+   inkscape:export-filename="/Users/arodin/dev/projects/ndx/syntax/docs/logo-syntax-framework.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview231762"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:document-units="mm"
+     showgrid="false"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0"
+     units="px"
+     inkscape:showpageshadow="false"
+     showborder="true"
+     inkscape:zoom="0.91963692"
+     inkscape:cx="501.82848"
+     inkscape:cy="140.27275"
+     inkscape:window-width="1920"
+     inkscape:window-height="988"
+     inkscape:window-x="1792"
+     inkscape:window-y="65"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs231757" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-66.277384,-82.527016)">
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:23.9889px;line-height:1.25;font-family:sans-serif;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.608526"
+       x="66.021057"
+       y="101.04292"
+       id="text1508-2"><tspan
+         sodipodi:role="line"
+         id="tspan1506-2"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:23.9889px;font-family:Nunito;-inkscape-font-specification:'Nunito Bold';stroke-width:0.608526"
+         x="66.021057"
+         y="101.04292"><tspan
+           style="font-size:23.9889px;fill:#58a6ff;fill-opacity:1"
+           id="tspan45874-9">&lt;</tspan><tspan
+           style="font-size:23.9889px;fill:#ff5598;fill-opacity:1"
+           id="tspan19384-1">!{S}</tspan><tspan
+           style="font-size:23.9889px;fill:#58a6ff;fill-opacity:1"
+           id="tspan44816-5">yntax&gt;<tspan
+   style="font-style:normal;font-variant:normal;font-weight:300;font-stretch:normal;font-family:Nunito;-inkscape-font-specification:'Nunito Light'"
+   id="tspan29142"> Framework</tspan></tspan></tspan></text>
+  </g>
+</svg>
