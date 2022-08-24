@@ -1,0 +1,37 @@
+<div class="fora !{true ? 'class-true' : 'class-false' }">
+  !{true ? 'valor-true' : 'valor-false' }
+
+  Outro texto qualquer
+
+  !{false ? 'valor-true' : 'valor-false' }
+
+  <div class="dentro !{false ? 'class-true' : 'class-false' }">
+    !{true ? 'valor-true' : 'valor-false' }
+
+    Outro texto qualquer
+
+    !{false ? 'valor-true' : 'valor-false' }
+  </div>
+
+
+  <form onsubmit="handleSubmit()">
+    <label for="listItem">List Item: </label>
+    <input id="listItem" value="${inputValue}" onchange="inputValue = e.target.value"/>
+  </form>
+
+  <p>Todo List:</p>
+  <ul>
+    <li each="item in todoList">{item}</li>
+  </ul>
+
+  <script>
+    let inputValue = ''
+    let todoList = [];
+
+    const handleSubmit = (e) => {
+      e.preventDefault()
+      todoList = [...todoList, inputValue]
+      inputValue = ''
+    }
+  </script>
+</div>

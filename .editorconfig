@@ -1,0 +1,8 @@
+root = true
+
+[*.{js,css,go,html,md}]
+charset = utf-8
+indent_style = space
+indent_size = 2
+max_line_length = 120
+

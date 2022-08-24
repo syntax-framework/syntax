@@ -24,21 +24,21 @@
 <component 
     name="clock" 
     param-title="string"
-    js-param-label="@title"
+    client-param-label="@title"
 >
-  <h1>!{title} server side</h1>    
-  <span>{{time}} - {{label}} client side</span>
+  <h1>{title} server side</h1>    
+  <span>${time} - ${label} client side</span>
 
   <style> span { color: red } </style>  
 
   <script>  
-    const [time, setTime] = STX.state(new Date())
+    let time = new Date();
 
     const interval = setInterval(() => {
-      setTime(new Date())  
+        time = new Date()
     }, 1000)
 
-    const clear = () => clearInterval(interval)  
+    const onDestroy = () => clearInterval(interval)  
   </script>  
 </component>  
 
