@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"github.com/julienschmidt/httprouter"
 	"github.com/syntax-framework/shtml"
+	"github.com/syntax-framework/shtml/cmn"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -25,6 +26,7 @@ type Site struct {
 	Router       *httprouter.Router
 	fsys         fs.FS
 	viewsBaseDir string
+	bundler      *Bundler
 }
 
 // New creates a new site and registers it in mux to handle requests for host.
@@ -35,6 +37,7 @@ func New(viewsFS fs.FS, viewsBaseDir string) *Site {
 		fsys:         viewsFS,
 		viewsBaseDir: viewsBaseDir,
 		Router:       router,
+		bundler:      &Bundler{},
 		//host:   host,
 	}
 	//mux.Handle(host+"/", site)
@@ -62,6 +65,7 @@ func (s *Site) Init() error {
 	var rootDir string
 	var ignoredDirs []string
 
+	// @TODO: Add many file loaders to allow libraries to contains it owns files
 	templateSystem := shtml.New(func(filepath string) (string, error) {
 		file, err := s.fsys.Open(rootDir + filepath)
 		if err != nil {
@@ -76,7 +80,11 @@ func (s *Site) Init() error {
 		return buf.String(), nil
 	})
 
-	// @TODO: Fazer em dois steps, primeiro passeia pelos arquivos, segundo, invoca o parse html ou asset
+	s.registerDirectives(templateSystem)
+
+	s.serveAssets()
+
+	// @TODO: Do it in two steps, first walk through the files, second, invoke parse html or asset
 	return fs.WalkDir(s.fsys, ".", func(filepath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -109,66 +117,152 @@ func (s *Site) Init() error {
 			path = "/" + path
 		}
 
+		// only pages html
 		if strings.HasSuffix(filepath, ".html") {
-			errHtmlPage := s.compileHtmlPage(path, templateSystem)
+			errHtmlPage := s.processPage(path, templateSystem)
 			if errHtmlPage != nil {
 				return errHtmlPage // @TODO: Custom error
 			}
-		} else if isAsset(d.Name()) {
-			s.parseAsset(filepath, path, s.fsys)
 		}
-
 		return nil
 	})
+
 }
 
-// compileHtmlPage load, compile and route page
-func (s *Site) compileHtmlPage(path string, ts shtml.TemplateSystem) error {
+// registerDirectives register custom Syntax directives
+func (s *Site) registerDirectives(templateSystem shtml.TemplateSystem) {
+	templateSystem.Register(PageDirective)
+}
+
+// processPage load, compile and route page
+func (s *Site) processPage(path string, ts shtml.TemplateSystem) error {
 
 	pageCompiled, compileContext, err := ts.Compile(path)
 	if err != nil {
 		return err
 	}
 
-	if page := compileContext.Get(PageConfigKey); page != nil {
-		if pageConfig, isPageConfig := page.(*PageConfig); isPageConfig {
-			// if we have page setup at compile time, you already do layout processing
-			println(pageConfig)
-		}
-	}
-
 	if strings.HasSuffix(path, "/index.html") {
 		path = strings.TrimSuffix(path, "index.html")
 	}
 
+	// definition of layout at compile time
+	var layout *Layout
+	var pageConfigCompile *PageConfig
+
+	layoutName := LayoutDefault
+	if page := compileContext.Get(PageConfigKey); page != nil {
+		if pageConfig, isPageConfig := page.(*PageConfig); isPageConfig {
+			// if we have page setup at compile time, you already do layout processing
+			if pageConfig.Layout != "" {
+				layoutName = pageConfig.Layout
+			}
+			pageConfigCompile = pageConfig
+		}
+	}
+
+	// load page layout, at compile time
+	if layout, err = getLayout(layoutName, ts); err != nil {
+		return err
+	}
+
+	// page assets
+	var assets []*cmn.Asset
+	if pageCompiled.Assets != nil {
+		assets = append(assets, pageCompiled.Assets...)
+	}
+	if layout.Compiled.Assets != nil {
+		assets = append(assets, layout.Compiled.Assets...)
+	}
+	s.bundler.SetPageAssets(path, assets)
+
 	s.Router.GET(path, func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		// @TODO: LastModified, checkPreconditions
 
-		scope := ts.NewScope()
+		pageConfigRuntime := pageConfigCompile
 
 		// compile page content
-		pageRendered := pageCompiled.Exec(scope)
+		pageScope := ts.NewScope()
+		pageRendered := pageCompiled.Exec(pageScope)
 
 		// get page info
-		if page := scope.Context.Get(PageConfigKey); page != nil {
+		if page := pageScope.Context.Get(PageConfigKey); page != nil {
 			if pageConfig, isPageConfig := page.(*PageConfig); isPageConfig {
-				// handles dynamic page parameters, such as title and assets
-				println(pageConfig)
+				pageConfigRuntime = pageConfig
 			}
 		}
 
-		res := pageRendered.String()
+		if pageConfigRuntime == nil {
+			pageConfigRuntime = &PageConfig{}
+		}
+
+		layoutScope := ts.NewScope()
+		layoutScope.Set("page", pageConfigRuntime)
+		layoutScope.Set("content", pageRendered.String())
+		layoutScope.Set("styles", s.bundler.GetStyles(path))
+		layoutScope.Set("scripts", s.bundler.GetScripts(path))
+		layoutRendered := layout.Compiled.Exec(layoutScope)
+
+		res := layoutRendered.String()
 
 		w.Header().Set("GetContent-Restrict", "text/html; charset=utf-8")
-		// w.Header().StringSet("GetContent-Length", strconv.FormatInt(sendSize, 10))
+		// w.Header().StringSet("Content-Length", strconv.FormatInt(sendSize, 10))
 		w.WriteHeader(200)
 
+		// @TODO: validar padrão de entrega de HTML respeitando os cabeçalhos, cache e etc
 		if r.Method != "HEAD" {
 			w.Write([]byte(res))
 		}
 	})
 
 	return nil
+}
+
+func (s *Site) serveAssets() {
+
+	s.Router.GET("/assets/*filepath", func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		filepath := ps.ByName("filepath")
+
+		var asset *cmn.Asset
+
+		// todo css e javascript são servidos através do Bundler, sem excessão
+		if strings.HasPrefix(filepath, "/css/") {
+			asset = s.bundler.GetAssetByName(strings.TrimPrefix(strings.TrimSuffix(filepath, ".css"), "/css/"))
+			if asset != nil && asset.Type != cmn.Stylesheet {
+				asset = nil
+			}
+		} else if strings.HasPrefix(filepath, "/js/") {
+			// se o asset estiver em um bundle e, o tamanho do arquivo com relação ao bundler for muito menor
+			// entregar o conteúdo js, caso contrário, fazer redirecionamento para o bundler
+			asset = s.bundler.GetAssetByName(strings.TrimPrefix(strings.TrimSuffix(filepath, ".js"), "/js/"))
+			if asset != nil && asset.Type != cmn.Javascript {
+				asset = nil
+			}
+		} else {
+			http.Error(w, "501 not implemented", http.StatusNotImplemented)
+			return
+		}
+
+		if asset == nil {
+			http.Error(w, "404 page not found", http.StatusNotFound)
+			return
+		}
+
+		switch asset.Type {
+		case cmn.Javascript:
+			w.Header().Set("Content-Type", "application/javascript")
+		case cmn.Stylesheet:
+			w.Header().Set("Content-Type", "text/css")
+		}
+
+		//"Content-Range": {r.contentRange(size)},
+		//"Content-Type":  {contentType},
+		// Content-Length
+		// Etag
+		// Last-Modified
+
+		w.Write([]byte(asset.Content))
+	})
 }
 
 // parseAsset processa e escreve o arquivo especificado de http.FileSystem no body de maneira eficiente.
