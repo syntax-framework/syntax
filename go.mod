@@ -13,6 +13,7 @@ require (
 	github.com/erinpentecost/byteline v1.0.0 // indirect
 	github.com/iancoleman/strcase v0.2.0 // indirect
 	github.com/tdewolff/parse/v2 v2.6.1 // indirect
+	github.com/tdewolff/test v1.0.7 // indirect
 	golang.org/x/net v0.0.0-20220708220712-1185a9018129 // indirect
 )
 

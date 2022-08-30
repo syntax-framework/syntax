@@ -20,7 +20,11 @@
 
   <form onsubmit="handleSubmit()">
     <label for="listItem">List Item: </label>
-    <input id="listItem" value="${inputValue}" onchange="inputValue = e.target.value"/>
+    <input id="listItem" value="${inputValue}" onchange="onChangeValue(e)"/>
+    <input value="${inputValue2}"/>
+
+    <p>inputValue = ${inputValue}</p>
+    <p>inputValue2 = ${inputValue2}</p>
   </form>
 
   <p>Todo List:</p>
@@ -30,7 +34,13 @@
 
   <script>
     let inputValue = ''
+    let inputValue2 = ''
     let todoList = [];
+
+    const onChangeValue = (e) => {
+      inputValue = e.target.value
+      console.log("Valor alterado", inputValue, inputValue2, e)
+    }
 
     const handleSubmit = (e) => {
       e.preventDefault()
