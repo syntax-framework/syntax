@@ -2,11 +2,15 @@ package syntax
 
 import (
 	"bytes"
+	"embed"
 	"github.com/julienschmidt/httprouter"
 	"github.com/syntax-framework/shtml"
 	"github.com/syntax-framework/shtml/cmn"
 	"io/fs"
 	"net/http"
+	"os"
+	"path"
+	"sort"
 	"strings"
 )
 
@@ -18,28 +22,47 @@ const (
 	MODEL
 )
 
+// FileSystem referencia para um fs.FS, permite que o sistema trabalhe com vários FileSystem
+type FileSystem struct {
+	fsys     fs.FS
+	root     string   // root dir
+	Ignored  []string // existing directories in that fsys starting with `_`
+	priority int      // allows prioritizing filesystems, used by libs to make components available
+	embed    bool
+}
+
 type Site struct {
+	Router      *httprouter.Router
+	Config      *Config
+	Bundler     *Bundler
+	FileSystems []*FileSystem
 	//host       string
 	pages        []*PageConfig
 	models       []*Model
 	middleware   []*Middleware
-	Router       *httprouter.Router
-	fsys         fs.FS
 	viewsBaseDir string
-	bundler      *Bundler
+	filesLookup  map[string]*FileSystem // cache lookup
+	Template     shtml.TemplateSystem
 }
 
 // New creates a new site and registers it in mux to handle requests for host.
 // If host is the empty string, the registrations are for the wildcard host.
-func New(viewsFS fs.FS, viewsBaseDir string) *Site {
+func New(config *Config) *Site {
 	router := httprouter.New()
 	site := &Site{
-		fsys:         viewsFS,
-		viewsBaseDir: viewsBaseDir,
-		Router:       router,
-		bundler:      &Bundler{},
+		//fsys:         viewsFS,
+		//viewsBaseDir: viewsBaseDir,
+		Config:  config,
+		Router:  router,
+		Bundler: &Bundler{},
 		//host:   host,
+		filesLookup: map[string]*FileSystem{},
 	}
+
+	site.Template = shtml.New(func(filepath string) (string, error) {
+		return site.loadFile(filepath)
+	})
+
 	//mux.Handle(host+"/", site)
 	return site
 }
@@ -62,84 +85,119 @@ func (s *Site) AddPage(p *PageConfig) *Site {
 
 // Init initializes the site, performs the processing of static files and initializes the routes
 func (s *Site) Init() error {
-	var rootDir string
-	var ignoredDirs []string
 
-	// @TODO: Add many file loaders to allow libraries to contains it owns files
-	templateSystem := shtml.New(func(filepath string) (string, error) {
-		file, err := s.fsys.Open(rootDir + filepath)
-		if err != nil {
-			return "", err
-		}
-		defer file.Close()
-		buf := new(bytes.Buffer)
-		_, err = buf.ReadFrom(file)
-		if err != nil {
-			return "", err
-		}
-		return buf.String(), nil
-	})
+	s.registerDirectives()
 
-	s.registerDirectives(templateSystem)
+	config := s.Config
+	if config.Dev {
+		// live reload
+		if !config.LiveReload.Disabled {
+			s.liveReloadInit(config.LiveReload)
+		}
+	}
 
 	s.serveAssets()
 
-	// @TODO: Do it in two steps, first walk through the files, second, invoke parse html or asset
-	return fs.WalkDir(s.fsys, ".", func(filepath string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+	// serve pages
+	err := s.servePages()
+	if err != nil {
+		return err
+	}
 
-		if filepath == "." {
-			return nil
-		}
+	return nil
+}
 
-		if rootDir == "" {
-			rootDir = filepath
-			return nil
-		}
-
-		if d.IsDir() {
-			if strings.HasPrefix(d.Name(), "_") {
-				ignoredDirs = append(ignoredDirs, filepath)
-			}
-			return nil
-		}
-
-		for _, ignored := range ignoredDirs {
-			if strings.HasPrefix(filepath, ignored) == true {
-				return nil
-			}
-		}
-
-		path := strings.TrimPrefix(filepath, rootDir)
-		if path[0] != '/' {
-			path = "/" + path
-		}
-
-		// only pages html
-		if strings.HasSuffix(filepath, ".html") {
-			errHtmlPage := s.processPage(path, templateSystem)
-			if errHtmlPage != nil {
-				return errHtmlPage // @TODO: Custom error
-			}
-		}
-		return nil
+// AddFileSystemDir register a new directory FileSystem on that site
+func (s *Site) AddFileSystemDir(root string, priority int) {
+	dir := path.Clean(root)
+	s.addFileSystem(&FileSystem{
+		fsys:     os.DirFS(dir),
+		priority: priority,
+		root:     "",
+		embed:    false,
 	})
+}
 
+// AddFileSystemEmbed register a new embed FileSystem on that site
+func (s *Site) AddFileSystemEmbed(embedFs embed.FS, root string, priority int) {
+	s.addFileSystem(&FileSystem{
+		fsys:     embedFs,
+		priority: priority,
+		embed:    true,
+		root:     path.Clean(root),
+	})
+}
+
+// AddFileSystemEmbed register a new FileSystem on that site
+func (s *Site) addFileSystem(system *FileSystem) {
+	s.FileSystems = append(s.FileSystems, system)
+	sort.Slice(s.FileSystems, func(i, j int) bool {
+		return s.FileSystems[i].priority > s.FileSystems[j].priority
+	})
 }
 
 // registerDirectives register custom Syntax directives
-func (s *Site) registerDirectives(templateSystem shtml.TemplateSystem) {
-	templateSystem.Register(PageDirective)
+func (s *Site) registerDirectives() {
+	s.Template.Register(PageDirective)
+}
+
+func (s *Site) servePages() error {
+	for _, system := range s.FileSystems {
+		err := fs.WalkDir(system.fsys, ".", func(filepath string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if filepath == "." {
+				return nil
+			}
+
+			if d.IsDir() {
+				if strings.HasPrefix(d.Name(), "_") {
+					system.Ignored = append(system.Ignored, filepath)
+				}
+				return nil
+			}
+
+			// ignored directories are only used in imports
+			for _, ignored := range system.Ignored {
+				if strings.HasPrefix(filepath, ignored) {
+					return nil
+				}
+			}
+
+			// only html pages
+			if strings.HasSuffix(filepath, ".html") {
+				fPath := strings.TrimPrefix(filepath, system.root)
+				//if fPath[0] != '/' {
+				//	fPath = "/" + fPath
+				//}
+
+				errHtmlPage := s.processPage(fPath)
+				if errHtmlPage != nil {
+					return errHtmlPage // @TODO: Custom error
+				}
+			}
+			return nil
+		})
+
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // processPage load, compile and route page
-func (s *Site) processPage(path string, ts shtml.TemplateSystem) error {
+func (s *Site) processPage(path string) error {
 
-	pageCompiled, compileContext, err := ts.Compile(path)
+	pageCompiled, compileContext, err := s.Template.Compile(path)
 	if err != nil {
 		return err
+	}
+
+	if path[0] != '/' {
+		path = "/" + path
 	}
 
 	if strings.HasSuffix(path, "/index.html") {
@@ -162,7 +220,7 @@ func (s *Site) processPage(path string, ts shtml.TemplateSystem) error {
 	}
 
 	// load page layout, at compile time
-	if layout, err = getLayout(layoutName, ts); err != nil {
+	if layout, err = s.getLayout(layoutName); err != nil {
 		return err
 	}
 
@@ -174,7 +232,7 @@ func (s *Site) processPage(path string, ts shtml.TemplateSystem) error {
 	if layout.Compiled.Assets != nil {
 		assets = append(assets, layout.Compiled.Assets...)
 	}
-	s.bundler.SetPageAssets(path, assets)
+	s.Bundler.SetPageAssets(path, assets)
 
 	s.Router.GET(path, func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		// @TODO: LastModified, checkPreconditions
@@ -182,7 +240,7 @@ func (s *Site) processPage(path string, ts shtml.TemplateSystem) error {
 		pageConfigRuntime := pageConfigCompile
 
 		// compile page content
-		pageScope := ts.NewScope()
+		pageScope := s.Template.NewScope()
 		pageRendered := pageCompiled.Exec(pageScope)
 
 		// get page info
@@ -196,11 +254,11 @@ func (s *Site) processPage(path string, ts shtml.TemplateSystem) error {
 			pageConfigRuntime = &PageConfig{}
 		}
 
-		layoutScope := ts.NewScope()
+		layoutScope := s.Template.NewScope()
 		layoutScope.Set("page", pageConfigRuntime)
 		layoutScope.Set("content", pageRendered.String())
-		layoutScope.Set("styles", s.bundler.GetStyles(path))
-		layoutScope.Set("scripts", s.bundler.GetScripts(path))
+		layoutScope.Set("styles", s.Bundler.GetStyles(path))
+		layoutScope.Set("scripts", s.Bundler.GetScripts(path))
 		layoutRendered := layout.Compiled.Exec(layoutScope)
 
 		res := layoutRendered.String()
@@ -219,7 +277,6 @@ func (s *Site) processPage(path string, ts shtml.TemplateSystem) error {
 }
 
 func (s *Site) serveAssets() {
-
 	s.Router.GET("/assets/*filepath", func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		filepath := ps.ByName("filepath")
 
@@ -227,14 +284,14 @@ func (s *Site) serveAssets() {
 
 		// todo css e javascript são servidos através do Bundler, sem excessão
 		if strings.HasPrefix(filepath, "/css/") {
-			asset = s.bundler.GetAssetByName(strings.TrimPrefix(strings.TrimSuffix(filepath, ".css"), "/css/"))
+			asset = s.Bundler.GetAssetByName(strings.TrimPrefix(strings.TrimSuffix(filepath, ".css"), "/css/"))
 			if asset != nil && asset.Type != cmn.Stylesheet {
 				asset = nil
 			}
 		} else if strings.HasPrefix(filepath, "/js/") {
 			// se o asset estiver em um bundle e, o tamanho do arquivo com relação ao bundler for muito menor
 			// entregar o conteúdo js, caso contrário, fazer redirecionamento para o bundler
-			asset = s.bundler.GetAssetByName(strings.TrimPrefix(strings.TrimSuffix(filepath, ".js"), "/js/"))
+			asset = s.Bundler.GetAssetByName(strings.TrimPrefix(strings.TrimSuffix(filepath, ".js"), "/js/"))
 			if asset != nil && asset.Type != cmn.Javascript {
 				asset = nil
 			}
@@ -303,6 +360,59 @@ func (s *Site) parseAsset(filepath string, path string, fsys fs.FS) {
 		r.URL.Path = filepath
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// loadFile load a file from FileSystems
+func (s *Site) loadFile(filepath string) (string, error) {
+
+	var file fs.File
+	var fileSystem *FileSystem
+	var err error
+
+	// lookup
+	if system, found := s.filesLookup[filepath]; found {
+		file, err = system.fsys.Open(system.root + filepath)
+		if err != nil {
+			if pathError, isPathError := err.(*fs.PathError); isPathError && pathError.Err == fs.ErrNotExist {
+				// file removed from this file system
+				delete(s.filesLookup, filepath)
+			} else {
+				return "", err
+			}
+		}
+		fileSystem = system
+	}
+
+	if file == nil {
+		for _, system := range s.FileSystems {
+			fullPath := strings.TrimPrefix(path.Join(system.root, filepath), "/")
+			file, err = system.fsys.Open(fullPath)
+			if err != nil {
+				if pathError, isPathError := err.(*fs.PathError); isPathError && pathError.Err == fs.ErrNotExist {
+					continue
+				}
+				return "", err
+			}
+			fileSystem = system
+			break
+		}
+	}
+
+	if file == nil {
+		// not found
+		return "", fs.ErrNotExist
+	}
+
+	s.filesLookup[filepath] = fileSystem
+
+	// load content
+	defer file.Close()
+	buf := new(bytes.Buffer)
+	_, err = buf.ReadFrom(file)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 // ServeHTTP implements http.Handler

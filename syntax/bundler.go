@@ -3,6 +3,7 @@ package syntax
 import (
 	"bytes"
 	"github.com/syntax-framework/shtml/cmn"
+	"github.com/syntax-framework/shtml/sht"
 )
 
 // Bundler responsible for grouping the assets used by the pages and, from that, defining the most optimized way to
@@ -11,7 +12,15 @@ type Bundler struct {
 	dirty             bool                    // Indica que houve mudança na
 	assetByName       map[string]*cmn.Asset   // facilita busca
 	assetByPage       map[string][]*cmn.Asset // Lista original de assets por página
+	assetRequired     map[*cmn.Asset]bool     // facilita busca
 	bundleByPageBuild map[string][]*cmn.Asset // Lista processada de assets por página
+}
+
+func (b *Bundler) AddRequiredAsset(asset *cmn.Asset) {
+	if b.assetRequired == nil {
+		b.assetRequired = map[*cmn.Asset]bool{}
+	}
+	b.assetRequired[asset] = true
 }
 
 // SetPageAssets define os assets que podem ser consumidos por uma página
@@ -52,9 +61,15 @@ func (b *Bundler) GetAssets(page string, assetType cmn.AssetType) []*cmn.Asset {
 	if bundle, exists := b.bundleByPageBuild[page]; exists {
 		for _, asset := range bundle {
 			if asset.Type == assetType {
-
 				assets = append(assets, asset)
 			}
+		}
+	}
+
+	// required assets
+	for asset, _ := range b.assetRequired {
+		if asset.Type == assetType {
+			assets = append(assets, asset)
 		}
 	}
 
@@ -87,6 +102,15 @@ func (b *Bundler) GetScripts(page string) string {
 			buf.WriteString(` integrity="` + asset.Integrity + `"`)
 		}
 
+		if asset.Attributes != nil {
+			for name, value := range asset.Attributes {
+				buf.WriteString(name)
+				if value != "" {
+					buf.WriteString(`="` + sht.HtmlEscape(value) + `"`)
+				}
+			}
+		}
+
 		buf.WriteString(`></script>`)
 	}
 	return buf.String()
@@ -112,6 +136,15 @@ func (b *Bundler) GetStyles(page string) string {
 			buf.WriteString(` integrity="` + asset.Integrity + `"`)
 		}
 
+		if asset.Attributes != nil {
+			for name, value := range asset.Attributes {
+				buf.WriteString(" " + name)
+				if value != "" {
+					buf.WriteString(`="` + sht.HtmlEscape(value) + `"`)
+				}
+			}
+		}
+
 		buf.WriteString(`>`)
 	}
 	return buf.String()
@@ -133,6 +166,10 @@ func (b *Bundler) build() {
 		for _, asset := range assets {
 			b.assetByName[asset.Name] = asset
 		}
+	}
+
+	for asset, _ := range b.assetRequired {
+		b.assetByName[asset.Name] = asset
 	}
 }
 

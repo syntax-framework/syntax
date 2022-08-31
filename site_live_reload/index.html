@@ -1,0 +1,59 @@
+<page
+  title="My First Syntax Page"
+/>
+
+<div class="fora !{true ? 'class-true' : 'class-false' }">
+  !{true ? 'valor-true' : 'valor-false' }
+
+  Outro texto qualquer
+
+  !{false ? 'valor-true' : 'valor-false' }
+
+  <div class="dentro !{false ? 'class-true' : 'class-false' }">
+    !{true ? 'valor-true' : 'valor-false' }
+
+    Outro texto qualquer
+
+    !{false ? 'valor-true' : 'valor-false' }
+  </div>
+
+
+  <hr>
+  <form ref="myFormReference" onsubmit="handleSubmit(e)">
+    <label for="listItem">List Item: </label>
+    <input value="${value}"/>
+    <input id="listItem" value="${value2}" onchange="onChangeValue2(e)"/>
+
+    <p>Time = ${time.toISOString()}</p>
+    <p>Value = ${value}</p>
+    <p>Todo List = ${JSON.stringify(todoList)}</p>
+    <p>Value 2 = ${value2}</p>
+    <input type="submit" />
+  </form>
+
+  <p>Todo List:</p>
+  <ul>
+    <li each="item in todoList">{item}</li>
+  </ul>
+
+  <script>
+    let time = new Date()
+    let value = '';
+    let value2 = '';
+    let todoList = [];
+
+    const onChangeValue2 = (e) => {
+      value2 = e.target.value
+    }
+
+    const handleSubmit = (e) => {
+      e.preventDefault()
+      todoList = [...todoList, value]
+      value = ''
+    }
+
+    let interval = setInterval(()=>{
+      time = new Date();
+    }, 1000)
+  </script>
+</div>

@@ -1,7 +1,6 @@
 package syntax
 
 import (
-	"github.com/syntax-framework/shtml"
 	"github.com/syntax-framework/shtml/sht"
 	"strings"
 )
@@ -17,8 +16,8 @@ type Layout struct {
 }
 
 // getLayout obtém um layout por nome
-func getLayout(name string, ts shtml.TemplateSystem) (*Layout, error) {
-	compiled, _, err := ts.Compile("/_layout/" + name)
+func (s *Site) getLayout(name string) (*Layout, error) {
+	compiled, _, err := s.Template.Compile("/_layout/" + name)
 	if err != nil {
 		return nil, err
 	}
