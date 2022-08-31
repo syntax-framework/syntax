@@ -18,13 +18,17 @@
   </div>
 
 
-  <form onsubmit="handleSubmit()">
+  <hr>
+  <form ref="myFormReference" onsubmit="handleSubmit(e)">
     <label for="listItem">List Item: </label>
-    <input id="listItem" value="${inputValue}" onchange="onChangeValue(e)"/>
-    <input value="${inputValue2}"/>
+    <input value="${value}"/>
+    <input id="listItem" value="${value2}" onchange="onChangeValue2(e)"/>
 
-    <p>inputValue = ${inputValue}</p>
-    <p>inputValue2 = ${inputValue2}</p>
+    <p>Time = ${time.toISOString()}</p>
+    <p>Value = ${value}</p>
+    <p>Todo List = ${JSON.stringify(todoList)}</p>
+    <p>Value 2 = ${value2}</p>
+    <input type="submit" />
   </form>
 
   <p>Todo List:</p>
@@ -33,19 +37,23 @@
   </ul>
 
   <script>
-    let inputValue = ''
-    let inputValue2 = ''
+    let time = new Date()
+    let value = '';
+    let value2 = '';
     let todoList = [];
 
-    const onChangeValue = (e) => {
-      inputValue = e.target.value
-      console.log("Valor alterado", inputValue, inputValue2, e)
+    const onChangeValue2 = (e) => {
+      value2 = e.target.value
     }
 
     const handleSubmit = (e) => {
       e.preventDefault()
-      todoList = [...todoList, inputValue]
-      inputValue = ''
+      todoList = [...todoList, value]
+      value = ''
     }
+
+    let interval = setInterval(()=>{
+      time = new Date();
+    }, 1000)
   </script>
 </div>
