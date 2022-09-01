@@ -5,10 +5,6 @@ import (
 	"strings"
 )
 
-/**
-Métodos para gerenciamento de layouts de uma página
-*/
-
 // Layout referencias de um layout compilado
 type Layout struct {
 	Name     string
@@ -16,7 +12,7 @@ type Layout struct {
 }
 
 // getLayout obtém um layout por nome
-func (s *Site) getLayout(name string) (*Layout, error) {
+func (s *Syntax) getLayout(name string) (*Layout, error) {
 	compiled, _, err := s.Template.Compile("/_layout/" + name)
 	if err != nil {
 		return nil, err

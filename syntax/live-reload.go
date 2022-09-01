@@ -2,7 +2,6 @@ package syntax
 
 import (
 	"bytes"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"github.com/julienschmidt/httprouter"
@@ -18,6 +17,7 @@ import (
 // https://github.com/sjansen/watchman
 // https://github.com/fsnotify/fsnotify
 // https://github.com/rollup/rollup/tree/master/src/watch
+// https://github.com/fsnotify/fsnotify
 
 type liveReloadClient struct {
 	addr   string
@@ -28,11 +28,8 @@ type liveReloadEvent struct {
 	EventType uint
 }
 
-//go:embed static/js/stx-livereload.js
-var liveReloadJS embed.FS
-
 // liveReloadInit initialize the site's live-reload client integration
-func (s *Site) liveReloadInit(config ConfigLiveReload) error {
+func (s *Syntax) liveReloadInit(config ConfigLiveReload) error {
 
 	endpoint := strings.TrimSpace(config.Endpoint)
 	if endpoint == "" {
@@ -40,8 +37,7 @@ func (s *Site) liveReloadInit(config ConfigLiveReload) error {
 	}
 
 	// add live-reload.js asset, required on all pages
-	s.AddFileSystemEmbed(liveReloadJS, "static/", 100)
-	asset, err := s.Template.(*sht.TemplateSystem).RegisterAssetJsFilepath("/js/stx-livereload.js")
+	asset, err := s.Template.(*sht.TemplateSystem).RegisterAssetJsFilepath("/assets/js/stx-livereload.js")
 	if err != nil {
 		return err
 	}
@@ -51,7 +47,7 @@ func (s *Site) liveReloadInit(config ConfigLiveReload) error {
 		"data-interval": strconv.Itoa(config.Interval),
 		"data-endpoint": endpoint,
 	}
-	if config.ReloadPageOnCss {
+	if config.ReloadCss {
 		asset.Attributes["data-reload-page-on-css"] = "true"
 	} else {
 		asset.Attributes["data-reload-page-on-css"] = "false"
