@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-//
 func Test_Page_Directive(t *testing.T) {
 
 	template := `

@@ -60,14 +60,14 @@
   // Use SSE
   //
   // https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
-  new EventSource(endpoint).onmessage = (event) => {
-    let msg = JSON.parse(event.data);
-    console.log("New Live Reload Event", msg)
-    setTimeout(function () {
-      // const reloadStrategy = reloadStrategies[msg.asset_type] || reloadStrategies.page;
-      // reloadStrategy();
-    }, interval);
-  }
+  // new EventSource(endpoint).onmessage = (event) => {
+  //   let msg = JSON.parse(event.data);
+  //   console.log("New Live Reload Event", msg)
+  //   setTimeout(function () {
+  //     // const reloadStrategy = reloadStrategies[msg.asset_type] || reloadStrategies.page;
+  //     // reloadStrategy();
+  //   }, interval);
+  // }
 
   /*
   Part of the code obtained from https://github.com/phoenixframework/phoenix_live_reload

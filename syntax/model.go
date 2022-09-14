@@ -1,10 +1,5 @@
 package syntax
 
-import (
-	"context"
-	"github.com/julienschmidt/httprouter"
-)
-
 //type ModelResult struct {
 //  Data  interface{}
 //  Cache interface{}
@@ -24,9 +19,9 @@ func (r ModelResult) CaseNotInCache(func()) {
 }
 
 type Model interface {
-	Before(request Request, ctx context.Context, params httprouter.Params) ModelResult
-	//Data(request Request, ctx context.Context, params httprouter.Params, ModelResult) ModelResult
-	//Procces(request Request, ctx context.Context, params httprouter.Params, Config) ModelResult
+	Before() ModelResult
+	//Data(request Request, ctx context.Context, ModelResult) ModelResult
+	//Procces(request Request, ctx context.Context, Config) ModelResult
 }
 
 //func Prepare(params) ModelResult {

@@ -3,7 +3,11 @@
  *
  * Ver https://github.com/riot/dom-bindings
  */
-(function () {
+(function (scriptTag) {
+  // get server configuration
+  let dataset = scriptTag.dataset;
+  const serverEndpoint = dataset.endpoint;
+
   // @formatter:off
   const FILE            = "f"; // string
   const LINE            = "l"; // string
@@ -66,6 +70,7 @@
     s: standalone, // standalone script
     b: bindToText,
     t: bindToAttr,
+    channel: connectToChannel
   }
 
   /**
@@ -559,25 +564,6 @@
 
   }
 
-  /**
-   * Faz a inicialização do Syntax Client
-   */
-  function initialize() {
-    standalones.forEach((config) => {
-      let element = $find(config.selector, null, true)
-      if (element) {
-        const constructor = construct(config.factory)
-        constructor(element)
-      }
-    })
-  }
-
-
-  if (document.readyState === 'loading') {
-    document.addEventListener("DOMContentLoaded", initialize);
-  } else {
-    initialize();
-  }
 
   //-- DOM UTILS - START -----------------------------------------------------------------------------------------------
 
@@ -600,8 +586,244 @@
 
   //-- DOM UTILS - END -------------------------------------------------------------------------------------------------
 
+  function getUUID() {
+    return (
+      String(1e7) + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) => (
+        Number(c) ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(c) / 4)))
+      ).toString(16)
+    );
+  }
+
+
   function noop() {
 
   }
-})()
+
+  /**
+   * Copyright 2016 Andrey Sitnik <andrey@sitnik.ru>, https://github.com/ai/nanoevents/blob/main/LICENSE
+   * @return {{emit(*, ...[*]): void, on(*, *): function(): void}|(function(): void)|*}
+   */
+  function createNanoEvents() {
+    let bindingRef = 0;
+    const events = {};
+    return {
+      emit(event, ...args) {
+        let callbacks = events[event] || []
+        for (let i = 0, length = callbacks.length; i < length; i++) {
+          callbacks[i](...args)
+        }
+      },
+      on(event, cb) {
+        events[event]?.push(cb) || (events[event] = [cb])
+        // off
+        return () => {
+          let callbacks = events[event]
+          if (callbacks) {
+            let idx = callbacks.indexOf(cb);
+            if (idx >= 0) {
+              callbacks.splice(idx, 1)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  //-- PUB SUB - START -------------------------------------------------------------------------------------------------
+
+
+  // Single connection for entire application
+  let connection
+
+  function push(payload, timeout, maxRetries = 3) {
+    let promise = new Promise((resolve, reject) => {
+      const fetchWithRetries = async (retries) => {
+        try {
+          return await fetch(serverEndpoint, {
+            method: 'POST',
+            mode: 'cors',
+            cache: 'no-cache',
+            credentials: 'same-origin',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            redirect: 'follow',
+            referrerPolicy: 'no-referrer',
+            body: JSON.stringify(payload)
+          });
+        } catch (error) {
+          if (retries < maxRetries) {
+            return fetchWithRetries(retries + 1);
+          }
+          // max retries exceeded
+          throw error;
+        }
+      }
+      return fetchWithRetries(0)
+    })
+
+    // if the timeout option is specified, race the fetch call
+    if (timeout) {
+      promise = Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          // throw on timeout
+          setTimeout(() => reject("TIMEOUT"), timeout)
+        })
+      ]);
+    }
+
+    return promise;
+  }
+
+  class Channel {
+
+    constructor(topic, params, sse) {
+      this.seq = 0;
+      this.topic = topic
+      this.timeout = 5000; // @TODO: from server config
+      this.events = createNanoEvents()
+
+      let listener = (e) => {
+        console.log(this, e.data)
+      };
+      sse.addEventListener(topic, listener)
+      this.onClose(() => {
+        sse.removeEventListener(listener)
+      });
+    }
+
+    onClose(callback) {
+      this.on("stx_close", callback);
+    }
+
+    on(event, callback) {
+      return this.events.on(event, callback);
+    }
+
+    /**
+     * Sends a message `event` to syntax with the payload `payload`.
+     *
+     * Syntax receives this in the `handle_in(event, payload, socket)` function. if syntax replies or it times out (default 10000ms),
+     * then optionally the reply can be received.
+     *
+     * @example
+     * channel.push("event")
+     *   .then(() => console.log("Submitted"))
+     *   .catch(err => console.log("Syntax errored", err))
+     *
+     * @param {string} event
+     * @param {Object} payload
+     * @param {number} timeout
+     * @param {number} maxRetries
+     * @returns {Promise<Response>}
+     */
+    push(event, payload, timeout = this.timeout, maxRetries) {
+      return push({t: this.topic, e: event, s: this.seq++, p: payload || {}}, timeout, maxRetries)
+    }
+
+    /**
+     * Leaves the channel
+     *
+     * Unsubscribes from server events, and instructs channel to terminate on server
+     * @param timeout
+     */
+    close(timeout = this.timeout) {
+      // return this.events.on(event, callback);
+    }
+  }
+
+  /**
+   *
+   * @param topic
+   * @param params
+   */
+  function connectToChannel(topic, params) {
+    if (!connection) {
+      connection = (() => {
+
+        let channels = [];
+
+        // https://developer.mozilla.org/en-US/docs/Web/API/EventSource
+        let sse = new EventSource(serverEndpoint);
+
+        sse.onmessage = (event) => {
+          let msg = JSON.parse(event.data);
+          console.log("New Live Event", msg)
+        }
+
+        sse.onerror = (event) => {
+          console.log('onerror', event)
+        }
+
+        sse.onopen = (event) => {
+          console.log('onopen', event)
+        }
+
+        /**
+         *
+         * @param topic
+         * @param params
+         */
+        function channel(topic, params) {
+          // channel:topic
+          topic = topic.replaceAll(/[^A-Za-z0-9\-_:]/g, '').replaceAll(/[:]+/g, ':')
+          if (topic === '') {
+            throw new Error('Invalid topic name')
+          }
+          let parts = topic.split(':')
+
+          if (parts.length > 2) {
+            throw new Error('Invalid topic name: ' + topic)
+          }
+
+          let channel = new Channel(topic, params, sse)
+
+          channels.push(channel)
+          channel.onClose(() => {
+            let idx = channels.indexOf(channel);
+            if (idx >= 0) {
+              channels.splice(idx, 1)
+            }
+          })
+
+          return channel
+        }
+
+        return {
+          channel: channel
+        }
+      })()
+    }
+
+    return connection.channel(topic, params)
+  }
+
+  //-- PUB SUB - END ---------------------------------------------------------------------------------------------------
+
+  /**
+   * Starts the Syntax Client
+   */
+  function initialize() {
+    // initialize components
+    standalones.forEach((config) => {
+      let element = $find(config.selector, null, true)
+      if (element) {
+        const constructor = construct(config.factory)
+        constructor(element)
+      }
+    })
+
+    let channel = STX.channel("xpto:beribecanta", {nome: 'albumina'});
+    console.log(channel)
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener("DOMContentLoaded", initialize);
+  } else {
+    initialize();
+  }
+
+})(document.currentScript)
 

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"strings"
 )
 
 // BANNER
@@ -21,9 +22,30 @@ const BANNER = "\n\n" +
 	"\033[00;94m>\033[00m" +
 	"\n\n=======================================\n"
 
+// MaxAge
+
+type ConfigCookie struct {
+	Name   string `yaml:"name"`
+	MaxAge int    `yaml:"max-age"`
+}
+
+// The SecretKeyBase is used as the input secret to the chain's key generator, which in turn is used to
+// create all ActiveSupport::MessageVerifier and ActiveSupport::MessageEncryptor instances, including the ones
+// that sign and encrypt cookies.
+//
+// In development and test, this is randomly generated and stored in a temporary file in tmp/development_secret.txt.
+//
+// In all other environments, we look for it first in ENV["SECRET_KEY_BASE"], then credentials.secret_key_base,
+// and finally secrets.secret_key_base. For most applications, the correct place to store it is in the encrypted
+// credentials file.
+//SecretKeyBase string
+
 type Config struct {
-	Dev        bool             `yaml:"dev"`
-	LiveReload ConfigLiveReload `yaml:"live-reload"`
+	Dev          bool             `yaml:"dev"`
+	Cookie       ConfigCookie     `yaml:"cookie"`
+	ServerTiming string           `yaml:"server-timing"`
+	LiveEndpoint string           `yaml:"live-endpoint"`
+	LiveReload   ConfigLiveReload `yaml:"live-reload"`
 }
 
 type ConfigLiveReload struct {
@@ -64,7 +86,13 @@ func loadConfig() *Config {
 	}
 	fmt.Printf("%+v\n", config)
 
-	println(pwd)
+	if strings.TrimSpace(config.Cookie.Name) == "" {
+		config.Cookie.Name = "SID"
+	}
+
+	if config.Cookie.MaxAge == 0 {
+		config.Cookie.MaxAge = 24 * 60 * 60 * 1000 // 24 hours
+	}
 
 	// @TODO: 1 Merge with environment
 	// @TODO: 2 Merge with command line
